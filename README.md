@@ -51,7 +51,7 @@ The system does not use a hardcoded company list. It generates multiple search a
 
 ## APIs
 
-- OpenAI Responses API with web search for dynamic research and reasoning.
+- Google Gemini API (Gemini 2.5 Flash) with Google Search grounding for dynamic research and reasoning. The current Google pricing page lists Gemini 2.5 Flash input/output as free on the Free Tier, with Google Search grounding available up to the free-tier daily limit.
 - Hunter Domain Search + Email Verifier for executive email discovery/verification.
 - Streamlit for the live application.
 
@@ -60,9 +60,9 @@ OpenAI's current API supports the Responses API and built-in web search tools. H
 ## Environment variables
 
 ```text
-OPENAI_API_KEY=...
+GEMINI_API_KEY=...
 HUNTER_API_KEY=...
-OPENAI_MODEL=gpt-5.6-luna
+GEMINI_MODEL=gemini-2.5-flash
 ```
 
 ## Local run
@@ -82,9 +82,9 @@ streamlit run app.py
 6. Add secrets:
 
 ```toml
-OPENAI_API_KEY = "your-openai-key"
+GEMINI_API_KEY = "your-gemini-key"
 HUNTER_API_KEY = "your-hunter-key"
-OPENAI_MODEL = "gpt-5.6-luna"
+GEMINI_MODEL = "gemini-2.5-flash"
 ```
 
 7. Deploy.
