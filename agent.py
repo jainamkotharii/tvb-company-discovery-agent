@@ -95,9 +95,10 @@ Be conservative. Never invent facts or emails. Generic emails (info, hello, cont
 Prefer primary company sources and reputable funding/revenue sources. Return evidence URLs as plain URLs.
 Return as many strong candidates as possible, up to the requested number.
 """
+    angle_text = "\n".join(f"- {x}" for x in angles)
     prompt = f"""Find up to {max_candidates} strong candidate companies in ONE research pass.
 Use and combine these search angles, and vary the search beyond them when useful:
-" + "\n".join(f"- {x}" for x in angles) + """
+{angle_text}
 
 For every candidate provide supported evidence for funding/revenue, platform, US presence, executive name,
 and a possible executive email if publicly discoverable. Leave unsupported fields blank.
