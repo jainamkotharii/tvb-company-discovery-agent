@@ -77,45 +77,42 @@ def _json_response(instructions: str, prompt: str):
 
 
 def discover_candidates(max_candidates: int, progress: Callable[[str], None]):
-    progress("1/4 Discovering companies from multiple independent search angles with Gemini + Google Search...")
-    queries = [
-        "technology platform startup raised between $1 million and $5 million outside the United States",
-        "SaaS startup funding $1m $5m Europe Asia Africa Latin America platform",
-        "AI platform startup raised $1m $5m outside US",
-        "fintech platform startup raised $1m $5m outside US",
-        "healthtech platform startup raised $1m $5m outside US",
-        "cybersecurity platform startup raised $1m $5m outside US",
-        "edtech platform startup raised $1m $5m outside US",
-        "travel technology platform startup raised $1m $5m outside US",
+    progress("1/4 Discovering companies with one optimized Gemini + Google Search pass...")
+    # Keep the first pass intentionally small: the free tier is quota-limited.
+    # One grounded batch is much cheaper than several independent model calls.
+    angles = [
+        "non-US SaaS/AI technology platform startup funding $1M-$5M",
+        "non-US fintech/healthtech/edtech/cybersecurity platform funding $1M-$5M",
+        "non-US technology platform company revenue $1M-$5M",
+        "Europe Asia Africa Latin America technology startup funding $1M-$5M",
     ]
-    query_text = "\n".join(f"- {q}" for q in queries)
     instructions = """
-You are the discovery researcher for The Venture Build (TVB).
-Use Google Search grounding aggressively and search the public web using multiple independent angles.
-You are discovering NEW candidates, not selecting from a fixed list.
-
-Hard target:
-1) revenue OR funding raised is between USD 1M and USD 5M inclusive;
-2) the company operates a technology-related platform;
-3) minimal to no presence in the United States;
-4) CEO or co-founder name and a direct professional email must be discoverable.
-
-Be conservative. Never invent facts or emails. If a field is not supported, use an empty string.
-Do not use generic info@, hello@, contact@, sales@ addresses as executive emails.
-Prefer primary company sources and reputable funding/news sources.
-Return source URLs as plain URLs in company_source and contact_source.
-Return at least 2x the requested final lead count when possible.
+You are the discovery researcher for The Venture Build (TVB). Use Google Search grounding.
+Find NEW companies, not a fixed list. Search multiple angles internally in this single pass.
+Hard filters: (1) funding raised OR revenue is USD 1M-$5M inclusive; (2) technology-related platform;
+(3) minimal/no US presence; (4) CEO or co-founder name and direct professional email are discoverable.
+Be conservative. Never invent facts or emails. Generic emails (info, hello, contact, sales) do not qualify.
+Prefer primary company sources and reputable funding/revenue sources. Return evidence URLs as plain URLs.
+Return as many strong candidates as possible, up to the requested number.
 """
-    prompt = f"""
-Find up to {max_candidates} candidate companies for TVB.
+    prompt = f"""Find up to {max_candidates} strong candidate companies in ONE research pass.
+Use and combine these search angles, and vary the search beyond them when useful:
+" + "\n".join(f"- {x}" for x in angles) + """
 
-Use these search angles and vary beyond them when useful:
-{query_text}
-
-For each candidate, capture evidence URLs and only include facts you can support from web research.
+For every candidate provide supported evidence for funding/revenue, platform, US presence, executive name,
+and a possible executive email if publicly discoverable. Leave unsupported fields blank.
 """
-    data = _json_response(instructions, prompt)
-    return data.get("companies", [])
+    try:
+        data = _json_response(instructions, prompt)
+        return data.get("companies", [])
+    except Exception as exc:
+        msg = str(exc)
+        if "429" in msg or "RESOURCE_EXHAUSTED" in msg or "quota" in msg.lower():
+            raise RuntimeError(
+                "Gemini Free Tier quota is currently exhausted. Wait for the quota window to reset, "
+                "then run again. The agent is optimized to use only a small number of Gemini calls per run."
+            ) from exc
+        raise
 
 
 def hunter_domain_search(domain: str):
@@ -194,54 +191,47 @@ def choose_executive_email(candidate: Dict[str, Any], progress: Callable[[str], 
 
 
 def validate_candidates(candidates: List[Dict[str, Any]], target_count: int, progress: Callable[[str], None]):
-    progress("2/4 Validating funding/revenue, platform fit and US presence with fresh Google Search research...")
-    valid = []
-    rejected = []
+    progress("2/4 Validating all discovered candidates in one optimized Gemini pass...")
+    if not candidates:
+        return [], []
 
-    batch_size = 6
-    for start in range(0, len(candidates), batch_size):
-        batch = candidates[start:start + batch_size]
-        names = "\n".join(
-            f"{i + 1}. {c.get('company_name', '')} | {c.get('domain', '')}"
-            for i, c in enumerate(batch)
-        )
-        instructions = """
-You are a strict due-diligence validator for TVB.
-Re-search every supplied company with Google Search. Do not trust the discovery record blindly.
-
-A company qualifies only if ALL hard filters are supported:
-- USD 1M to 5M inclusive in funding raised OR revenue;
-- operates a technology-related platform;
-- minimal to no presence in the United States;
-- CEO or co-founder can be identified;
-- a direct professional email can later be independently verified.
-
-If funding/revenue is outside the range or unsupported, reject.
-If US presence is substantial, reject.
-If a required field is uncertain, leave it blank and reject.
-Never invent or infer an email.
-Do not use generic addresses.
-Return evidence URLs as plain URLs.
+    names = "\n".join(
+        f"{i + 1}. {c.get('company_name', '')} | {c.get('domain', '')}"
+        for i, c in enumerate(candidates)
+    )
+    instructions = """
+You are a strict due-diligence validator for TVB. Re-search every supplied company with Google Search.
+A company qualifies only if ALL hard filters are supported: USD 1M-$5M inclusive funding OR revenue,
+technology-related platform, minimal/no US presence, identifiable CEO/co-founder, and a direct professional
+executive email that can be independently verified later. Reject unsupported or conflicting evidence.
+Never invent facts or emails. Do not use generic addresses. Return evidence URLs as plain URLs.
 """
-        prompt = f"""
-Validate these candidates independently:
+    prompt = f"""Validate every candidate below in ONE batch. Return the best supported record for each.
 
 {names}
 
-For each, return the strongest evidence you can find. Keep the funding/revenue value numerical in USD.
+Do not omit candidates; mark meets_all_hard_filters false when evidence is insufficient.
 """
+    try:
         data = _json_response(instructions, prompt)
-        for c in data.get("companies", []):
-            if c.get("meets_all_hard_filters"):
-                valid.append(c)
-            else:
-                rejected.append({
-                    "company_name": c.get("company_name", ""),
-                    "reason": c.get("qualification_reason", "Failed one or more hard filters"),
-                })
-        if len(valid) >= target_count:
-            break
+    except Exception as exc:
+        msg = str(exc)
+        if "429" in msg or "RESOURCE_EXHAUSTED" in msg or "quota" in msg.lower():
+            raise RuntimeError(
+                "Gemini Free Tier quota is currently exhausted. Wait for the quota window to reset, "
+                "then run again. Validation is intentionally limited to one Gemini call."
+            ) from exc
+        raise
 
+    valid, rejected = [], []
+    for c in data.get("companies", []):
+        if c.get("meets_all_hard_filters"):
+            valid.append(c)
+        else:
+            rejected.append({
+                "company_name": c.get("company_name", ""),
+                "reason": c.get("qualification_reason", "Failed one or more hard filters"),
+            })
     return valid, rejected
 
 
