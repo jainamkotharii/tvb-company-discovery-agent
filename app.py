@@ -26,8 +26,8 @@ with st.sidebar:
     st.divider()
     st.caption("The agent leaves unverified fields blank. It does not substitute generic contact emails for CEO/co-founder emails.")
 
-if not os.getenv("OPENAI_API_KEY"):
-    st.warning("OPENAI_API_KEY is not configured. Add it in Streamlit Secrets before running.")
+if not os.getenv("GEMINI_API_KEY"):
+    st.warning("GEMINI_API_KEY is not configured. Add it in Streamlit Secrets before running.")
 if not os.getenv("HUNTER_API_KEY"):
     st.warning("HUNTER_API_KEY is not configured. Email verification will be unavailable and the app will not claim an email is verified.")
 
